@@ -30,11 +30,12 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-# ── パス ──────────────────────────────────────────────────────
-XLSX_PATH    = Path("~/sigma/x_posts/posts_categorized.xlsx").expanduser()
-TWEETS_JS    = Path("~/sigma/x_posts/tweets.js").expanduser()
-STATE_PATH   = Path("~/sigma/x_posts/.smart_post_state.json").expanduser()
-ENV_PATH     = Path("~/sigma/.env").expanduser()
+# ── パス（スクリプト位置基準で解決 → ローカル・GitHub Actions 共通） ──
+_BASE        = Path(__file__).resolve().parent.parent
+XLSX_PATH    = _BASE / "x_posts/posts_categorized.xlsx"
+TWEETS_JS    = _BASE / "x_posts/tweets.js"
+STATE_PATH   = _BASE / "x_posts/.smart_post_state.json"
+ENV_PATH     = _BASE / ".env"
 
 # ── X API エンドポイント ────────────────────────────────────────
 TWEETS_URL       = "https://api.twitter.com/2/tweets"

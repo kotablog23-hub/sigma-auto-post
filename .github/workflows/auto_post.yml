@@ -1,0 +1,85 @@
+name: X Auto Post
+
+# JST = UTC+9 なので各時刻から9時間引いてUTCに変換
+#
+# 日曜 JST: 12 13 14 15 16 17 19  → UTC: 03 04 05 06 07 08 10  (7件)
+# 月曜 JST: 12 13 15 17 19 21     → UTC: 03 04 06 08 10 12      (6件)
+# 火曜 JST: 12 15 19 21 22        → UTC: 03 06 10 12 13          (5件)
+# 水曜 JST: 12 15 19 21 22        → UTC: 03 06 10 12 13          (5件)
+# 木曜 JST: 12 15 19 21 22        → UTC: 03 06 10 12 13          (5件)
+# 金曜 JST: 12 13 15 19 21        → UTC: 03 04 06 10 12          (5件)
+# 土曜 JST: 12 19                 → UTC: 03 10                   (2件)
+#                                                         合計: 35件/週
+
+on:
+  schedule:
+    # UTC 03:00 — 全曜日 (JST 12:00)
+    - cron: '0 3 * * *'
+    # UTC 04:00 — 日・月・金 (JST 13:00)
+    - cron: '0 4 * * 0,1,5'
+    # UTC 05:00 — 日のみ (JST 14:00)
+    - cron: '0 5 * * 0'
+    # UTC 06:00 — 日〜金 (JST 15:00)
+    - cron: '0 6 * * 0,1,2,3,4,5'
+    # UTC 07:00 — 日のみ (JST 16:00)
+    - cron: '0 7 * * 0'
+    # UTC 08:00 — 日・月 (JST 17:00)
+    - cron: '0 8 * * 0,1'
+    # UTC 10:00 — 全曜日 (JST 19:00)
+    - cron: '0 10 * * *'
+    # UTC 12:00 — 月〜金 (JST 21:00)
+    - cron: '0 12 * * 1,2,3,4,5'
+    # UTC 13:00 — 火・水・木 (JST 22:00)
+    - cron: '0 13 * * 2,3,4'
+
+  # 手動実行（テスト用）
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run（実際には投稿しない）'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: auto-post
+  cancel-in-progress: false  # 同時実行しない（キューに積む）
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 状態ファイルをpushするために必要
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run auto_post.py
+        env:
+          X_API_KEY:             ${{ secrets.X_API_KEY }}
+          X_API_SECRET:          ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN:        ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python3 scripts/auto_post.py --dry-run
+          else
+            python3 scripts/auto_post.py
+          fi
+
+      - name: Commit state file
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add x_posts/.smart_post_state.json
+          git diff --staged --quiet || git commit -m "chore: update post state [skip ci]"
+          git push

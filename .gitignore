@@ -6,7 +6,6 @@ x_posts/tweets.js
 
 # ランタイム状態・ログ
 x_posts/.post_state.json
-x_posts/.smart_post_state.json
 scripts/scheduled_today.log
 
 # 一時ファイル
