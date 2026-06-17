@@ -1,0 +1,14 @@
+# 認証情報・シークレット
+.env
+
+# ツイートの生データ（個人情報・大容量）
+x_posts/tweets.js
+
+# ランタイム状態・ログ
+x_posts/.post_state.json
+x_posts/.smart_post_state.json
+scripts/scheduled_today.log
+
+# 一時ファイル
+x_posts/~$*.xlsx
+.claude/

@@ -1,45 +1,177 @@
 #!/usr/bin/env python3
 """
-X 自動投稿スクリプト — buffer_import.csv を順番に1件ずつ投稿し、
-投稿直後に自動リプライで note リンクを付ける。
+スマートカテゴリ選択版 X 自動投稿スクリプト
+
+posts_categorized.xlsx を読み込み、実行時の時間・曜日・月に応じて
+カテゴリを選び、未投稿の投稿をランダムに選んで投稿する。
 
 使い方:
-  python3 auto_post.py          # 次の1件を投稿
-  python3 auto_post.py --dry-run  # 実際には投稿せず確認のみ
+  python3 auto_post.py            # 1件投稿
+  python3 auto_post.py --dry-run  # 確認のみ（実際には投稿しない）
+  python3 auto_post.py --status   # 残件数をカテゴリ別に表示
 
-必要な環境変数:
-  X_API_KEY
-  X_API_SECRET
-  X_ACCESS_TOKEN
-  X_ACCESS_TOKEN_SECRET
+必要な環境変数 (~/sigma/.env):
+  X_API_KEY / X_API_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET
 
-cron 設定例（エンゲージメント上位スロットに合わせた例）:
-  0 12 * * 0  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
-  0 17 * * 0  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
-  0 17 * * 1  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
-  0 20 * * 2  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
-  0 20 * * 4  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+cron 設定例:
+  0  7 * * 1-5  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+  0 12 * * 1-5  cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+  0 12 * * 0    cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+  0 17 * * 0    cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+  0 17 * * 1    cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+  0 20 * * 2    cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
+  0 20 * * 4    cd /home/kota && python3 sigma/scripts/auto_post.py >> sigma/scripts/post.log 2>&1
 """
 
-import csv, hmac, hashlib, json, os, sys, time, uuid
+import base64, hashlib, hmac, json, os, random, re, sys, time, uuid, zipfile
 import urllib.parse, urllib.request
-from pathlib import Path
+import xml.etree.ElementTree as ET
+from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 
-# ── パス設定 ──────────────────────────────────────────────
-CSV_PATH   = Path("~/sigma/x_posts/buffer_import.csv").expanduser()
-STATE_PATH = Path("~/sigma/x_posts/.post_state.json").expanduser()
-LOG_PREFIX = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+# ── パス ──────────────────────────────────────────────────────
+XLSX_PATH    = Path("~/sigma/x_posts/posts_categorized.xlsx").expanduser()
+TWEETS_JS    = Path("~/sigma/x_posts/tweets.js").expanduser()
+STATE_PATH   = Path("~/sigma/x_posts/.smart_post_state.json").expanduser()
+ENV_PATH     = Path("~/sigma/.env").expanduser()
 
-# ── X API エンドポイント ───────────────────────────────────
+# ── X API エンドポイント ────────────────────────────────────────
 TWEETS_URL       = "https://api.twitter.com/2/tweets"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 
-# ── OAuth 1.0a 署名（標準ライブラリのみ） ─────────────────
-import base64 as _b64
+NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
+# ── noteリンク自動分類 ──────────────────────────────────────────
+REPLY_TEXTS = {
+    "motemigaki": "「爆速でモテる男磨きのやり方」非モテが恋愛の土台を築き上げる男磨きby元自閉症チー牛が解説\nhttps://note.com/puregrinding1/n/n4eabc4c9b556",
+    "shijaku":    "【スマホ中毒者向け】\"デジタル・ドーパミン廃人\"だった私がスクリーンタイム10時間→1時間で人生を奪還した思考法\nhttps://note.com/puregrinding1/n/n75b3881b4678",
+    "zoryo":      "【ヒョロガリ向け】最短で「モテボディ」を獲得するための食事プログラム｜by元体重39kgのヒョロガリが解説。\nhttps://note.com/puregrinding1/n/na60936ff3ad1",
+}
+NOTE_KW = {
+    "motemigaki": ["モテ","恋愛","外見","見た目","コミュ","男磨き","清潔感","服装","ファッション",
+                   "髪","女性","女子","チー牛","非モテ","デート","彼女","自己開示","会話","話し方",
+                   "印象","魅力","好感度","自閉症","陰キャ","童貞","匂い","臭い","清潔","春"],
+    "shijaku":    ["スマホ","ドーパミン","集中","スクリーンタイム","デジタル","SNS","YouTube",
+                   "ショート","依存","中毒","通知","ポルノ","スクロール","刺激","快楽","誘惑",
+                   "スマホ断ち","脳","報酬","習慣","意志力","テストステロン"],
+    "zoryo":      ["筋トレ","トレーニング","ジム","食事","プロテイン","カロリー","増量","体型",
+                   "筋肉","体重","バルク","タンパク質","ヒョロガリ","鍛え","筋量","食べ","肉",
+                   "炭水化物","Big３","ベンチ","スクワット","デッドリフト","夏"],
+}
+
+def classify_note(text: str) -> str:
+    scores = {k: sum(1 for w in ws if w in text) for k, ws in NOTE_KW.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "motemigaki"
+
+
+# ── .env 読み込み ───────────────────────────────────────────────
+def load_env():
+    if not ENV_PATH.exists():
+        return
+    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+# ── xlsx 読み込み ───────────────────────────────────────────────
+def load_posts() -> list[dict]:
+    with zipfile.ZipFile(XLSX_PATH) as zf:
+        sst_root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+        strings = [si.find(f"{{{NS}}}t").text or ""
+                   for si in sst_root.findall(f"{{{NS}}}si")]
+        sheet_root = ET.fromstring(zf.read("xl/worksheets/sheet1.xml"))
+
+    posts = []
+    for row in sheet_root.findall(f".//{{{NS}}}row"):
+        cells = row.findall(f"{{{NS}}}c")
+        if not cells:
+            continue
+        def val(c):
+            v = c.find(f"{{{NS}}}v")
+            if v is None: return ""
+            return strings[int(v.text)] if c.get("t") == "s" else (v.text or "")
+        r = [val(c) for c in cells]
+        if len(r) < 5 or r[1] == "投稿文":
+            continue
+        posts.append({
+            "date":          r[0],
+            "text":          r[1],
+            "likes":         int(r[2] or 0),
+            "rts":           int(r[3] or 0),
+            "time_category": r[4] if len(r) > 4 else "normal",
+            "key":           f"{r[0]}|{r[1][:40]}",
+        })
+    return posts
+
+
+# ── tweets.js から画像URL辞書を構築 ────────────────────────────
+def load_media_map() -> dict:
+    if not TWEETS_JS.exists():
+        return {}
+    raw = TWEETS_JS.read_text(encoding="utf-8")
+    raw = re.sub(r"^window\.YTD\.tweets\.part\d+\s*=\s*", "", raw.strip())
+    data = json.loads(raw)
+    media_map = {}
+    for item in data:
+        t = item["tweet"]
+        try:
+            dt = datetime.strptime(t["created_at"], "%a %b %d %H:%M:%S +0000 %Y")
+            date_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        media = (t.get("extended_entities", {}).get("media") or
+                 t.get("entities", {}).get("media", []))
+        urls = [m["media_url_https"] for m in media if m.get("type") == "photo"]
+        if urls:
+            media_map[date_str] = urls
+    return media_map
+
+
+# ── カテゴリ選択ロジック ────────────────────────────────────────
+def pick_category(now: datetime, available: dict) -> str | None:
+    h  = now.hour
+    wd = now.weekday()   # 0=月, 4=金, 6=日
+    m  = now.month
+
+    # 季節カテゴリ（normal fallback 時に 25% で混入）
+    seasonal = None
+    if 6 <= m <= 8:   seasonal = "summer"
+    elif 3 <= m <= 4: seasonal = "spring"
+    elif 1 <= m <= 3: seasonal = "exam"
+
+    # 時間・曜日による優先カテゴリ
+    if wd == 4 and h >= 19:   primary = "friday"
+    elif wd == 6:              primary = "sunday"
+    elif 7 <= h < 9:           primary = "morning"
+    elif 12 <= h < 13:         primary = "lunch"
+    elif 19 <= h < 22:         primary = "night"
+    else:                      primary = "normal"
+
+    # 優先カテゴリに未投稿があればそれを使う
+    if primary != "normal" and available.get(primary):
+        return primary
+
+    # normal fallback に季節を混入（25%）
+    if seasonal and available.get(seasonal) and random.random() < 0.25:
+        return seasonal
+
+    if available.get("normal"):
+        return "normal"
+
+    # 残り全カテゴリから探す
+    for cat in ["morning","night","lunch","sunday","friday","summer","spring","exam"]:
+        if available.get(cat):
+            return cat
+
+    return None
+
+
+# ── OAuth 1.0a ─────────────────────────────────────────────────
 def _pct(s: str) -> str:
-    # RFC 3986 unreserved chars: A-Z a-z 0-9 - . _ ~
     return urllib.parse.quote(str(s), safe="-._~")
 
 def _oauth_header(method: str, url: str, creds: dict) -> str:
@@ -51,41 +183,29 @@ def _oauth_header(method: str, url: str, creds: dict) -> str:
         "oauth_token":            creds["access_token"],
         "oauth_version":          "1.0",
     }
-    # signature base string
     param_str = "&".join(f"{_pct(k)}={_pct(v)}" for k, v in sorted(p.items()))
     base = f"{_pct(method.upper())}&{_pct(url)}&{_pct(param_str)}"
-    # signing key
-    key = f"{_pct(creds['api_secret'])}&{_pct(creds['access_token_secret'])}"
-    sig = _b64.b64encode(
+    key  = f"{_pct(creds['api_secret'])}&{_pct(creds['access_token_secret'])}"
+    sig  = base64.b64encode(
         hmac.new(key.encode(), base.encode(), hashlib.sha1).digest()
     ).decode()
     p["oauth_signature"] = sig
-    # Authorization header (keys unencoded, values percent-encoded)
-    parts = ", ".join(f'{k}="{_pct(v)}"' for k, v in sorted(p.items()))
-    return f"OAuth {parts}"
+    return "OAuth " + ", ".join(f'{k}="{_pct(v)}"' for k, v in sorted(p.items()))
 
 
 def _upload_media(img_url: str, creds: dict) -> str:
-    """画像URLからダウンロードしてX Mediaにアップロード、media_id_stringを返す"""
     with urllib.request.urlopen(img_url) as resp:
         img_data = resp.read()
         content_type = resp.headers.get("Content-Type", "image/jpeg")
-    # multipart/form-data で送信（bodyはOAuth署名に含めない）
     boundary = uuid.uuid4().hex
     body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="media"\r\n'
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"media\"\r\n"
         f"Content-Type: {content_type}\r\n\r\n"
     ).encode() + img_data + f"\r\n--{boundary}--\r\n".encode()
-    header = _oauth_header("POST", MEDIA_UPLOAD_URL, creds)
     req = urllib.request.Request(
-        MEDIA_UPLOAD_URL,
-        data=body,
-        headers={
-            "Authorization": header,
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        },
-        method="POST",
+        MEDIA_UPLOAD_URL, data=body, method="POST",
+        headers={"Authorization": _oauth_header("POST", MEDIA_UPLOAD_URL, creds),
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"},
     )
     try:
         with urllib.request.urlopen(req) as resp:
@@ -94,126 +214,132 @@ def _upload_media(img_url: str, creds: dict) -> str:
         raise RuntimeError(f"Media upload HTTP {e.code}: {e.read().decode()}") from e
 
 
-def _post(body: dict, creds: dict, reply_to_id: str = None, media_ids: list = None) -> dict:
+def _post_tweet(body: dict, creds: dict, reply_to_id: str = None,
+                media_ids: list = None) -> str:
     if reply_to_id:
         body["reply"] = {"in_reply_to_tweet_id": reply_to_id}
     if media_ids:
         body["media"] = {"media_ids": media_ids}
-    payload = json.dumps(body).encode()
-    header = _oauth_header("POST", TWEETS_URL, creds)
     req = urllib.request.Request(
-        TWEETS_URL,
-        data=payload,
-        headers={
-            "Authorization": header,
-            "Content-Type": "application/json",
-        },
-        method="POST",
+        TWEETS_URL, data=json.dumps(body).encode(), method="POST",
+        headers={"Authorization": _oauth_header("POST", TWEETS_URL, creds),
+                 "Content-Type": "application/json"},
     )
     try:
         with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+            return json.loads(resp.read())["data"]["id"]
     except urllib.error.HTTPError as e:
-        err = e.read().decode()
-        raise RuntimeError(f"HTTP {e.code}: {err}") from e
+        raise RuntimeError(f"HTTP {e.code}: {e.read().decode()}") from e
 
 
-# ── 状態管理 ───────────────────────────────────────────────
+# ── 状態管理 ───────────────────────────────────────────────────
 def load_state() -> dict:
     if STATE_PATH.exists():
         return json.loads(STATE_PATH.read_text(encoding="utf-8"))
-    return {"next_index": 0, "posted": []}
+    return {"posted_keys": [], "history": []}
 
 def save_state(state: dict):
-    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2),
+                          encoding="utf-8")
 
 
-# ── メイン ─────────────────────────────────────────────────
+# ── メイン ─────────────────────────────────────────────────────
 def main():
+    load_env()
+    now     = datetime.now()
+    log_pfx = f"[{now.strftime('%Y-%m-%d %H:%M:%S')}]"
     dry_run = "--dry-run" in sys.argv
+    status  = "--status"  in sys.argv
 
-    # 環境変数チェック
+    # 環境変数
     creds = {
         "api_key":             os.environ.get("X_API_KEY", ""),
         "api_secret":          os.environ.get("X_API_SECRET", ""),
         "access_token":        os.environ.get("X_ACCESS_TOKEN", ""),
         "access_token_secret": os.environ.get("X_ACCESS_TOKEN_SECRET", ""),
     }
-    missing = [k for k, v in creds.items() if not v]
-    if missing and not dry_run:
-        sys.exit(f"❌ 環境変数が未設定: {', '.join(missing)}")
+    if not dry_run and not status:
+        missing = [k for k, v in creds.items() if not v]
+        if missing:
+            sys.exit(f"❌ 環境変数未設定: {', '.join(missing)}")
 
-    # CSV 読み込み
-    if not CSV_PATH.exists():
-        sys.exit(f"❌ CSV が見つかりません: {CSV_PATH}")
-    with open(CSV_PATH, encoding="utf-8-sig") as f:
-        rows = list(csv.DictReader(f))
+    posts     = load_posts()
+    state     = load_state()
+    posted_ks = set(state["posted_keys"])
+    media_map = load_media_map()
 
-    state = load_state()
-    idx = state["next_index"]
+    # 対象期間フィルター
+    posts = [p for p in posts
+             if "2026-01-29" <= p["date"][:10] <= "2026-06-17"]
 
-    if idx >= len(rows):
-        print(f"{LOG_PREFIX} ✅ 全投稿完了（{len(rows)}件）")
+    # カテゴリ別に未投稿を分類
+    available: dict[str, list] = defaultdict(list)
+    for p in posts:
+        if p["key"] not in posted_ks:
+            available[p["time_category"]].append(p)
+
+    total_remaining = sum(len(v) for v in available.values())
+
+    # --status モード
+    if status:
+        print(f"総未投稿: {total_remaining}件 / {len(posts)}件")
+        for cat in ["morning","lunch","night","sunday","friday","summer","spring","exam","normal"]:
+            print(f"  {cat:<10}: {len(available.get(cat, []))}件")
         return
 
-    row = rows[idx]
-    text       = row["text"].strip()
-    reply_url  = row["reply"].strip()
-    orig_date  = row["date"].strip()
-    media_urls = [u for u in row.get("media_urls", "").split("|") if u.strip()]
+    if total_remaining == 0:
+        print(f"{log_pfx} ✅ 全投稿完了")
+        return
 
-    print(f"{LOG_PREFIX} [{idx+1}/{len(rows)}] 元日時: {orig_date}")
-    print(f"{LOG_PREFIX} 本文: {text[:80]}{'...' if len(text)>80 else ''}")
-    print(f"{LOG_PREFIX} 画像: {len(media_urls)}枚")
-    print(f"{LOG_PREFIX} リプライURL: {reply_url}")
+    # カテゴリ選択
+    cat = pick_category(now, available)
+    if cat is None:
+        print(f"{log_pfx} ❌ 投稿可能な投稿が見つかりません")
+        return
+
+    # カテゴリ内で日付順に選択
+    post = sorted(available[cat], key=lambda p: p["date"])[0]
+
+    note_cat   = classify_note(post["text"])
+    reply_text = REPLY_TEXTS[note_cat]
+    img_urls   = media_map.get(post["date"], [])
+
+    print(f"{log_pfx} カテゴリ: {cat} | note: {note_cat}")
+    print(f"{log_pfx} 元日時: {post['date']}")
+    print(f"{log_pfx} 本文: {post['text'][:80]}{'...' if len(post['text'])>80 else ''}")
+    print(f"{log_pfx} 画像: {len(img_urls)}枚 | 残り: {total_remaining-1}件")
 
     if dry_run:
-        for u in media_urls:
-            print(f"{LOG_PREFIX} [DRY RUN] 画像: {u}")
-        print(f"{LOG_PREFIX} [DRY RUN] 投稿はスキップされました")
-        print(f"{LOG_PREFIX} [DRY RUN] 次回のインデックス: {idx+1}")
+        print(f"{log_pfx} [DRY RUN] スキップ")
         return
 
-    # 画像アップロード（最大4枚）
+    # 画像アップロード
     media_ids = []
-    for img_url in media_urls[:4]:
-        media_id = _upload_media(img_url, creds)
-        media_ids.append(media_id)
-        print(f"{LOG_PREFIX} 画像アップ完了: {img_url.split('/')[-1]} → {media_id}")
+    for img_url in img_urls[:4]:
+        mid = _upload_media(img_url, creds)
+        media_ids.append(mid)
+        print(f"{log_pfx} 画像アップ: {img_url.split('/')[-1]} → {mid}")
 
     # 本文投稿
-    result = _post({"text": text}, creds, media_ids=media_ids or None)
-    tweet_id = result["data"]["id"]
-    print(f"{LOG_PREFIX} ✅ 投稿完了: https://x.com/i/web/status/{tweet_id}")
+    tweet_id = _post_tweet({"text": post["text"]}, creds,
+                            media_ids=media_ids or None)
+    print(f"{log_pfx} ✅ 投稿: https://x.com/i/web/status/{tweet_id}")
 
-    # URLをタイトル付きリプライ文に変換
-    REPLY_TEXTS = {
-        "https://note.com/puregrinding1/n/n4eabc4c9b556":
-            "「爆速でモテる男磨きのやり方」非モテが恋愛の土台を築き上げる男磨きby元自閉症チー牛が解説\nhttps://note.com/puregrinding1/n/n4eabc4c9b556",
-        "https://note.com/puregrinding1/n/n75b3881b4678":
-            "【スマホ中毒者向け】\"デジタル・ドーパミン廃人\"だった私がスクリーンタイム10時間→1時間で人生を奪還した思考法\nhttps://note.com/puregrinding1/n/n75b3881b4678",
-        "https://note.com/puregrinding1/n/na60936ff3ad1":
-            "【ヒョロガリ向け】最短で「モテボディ」を獲得するための食事プログラム｜by元体重39kgのヒョロガリが解説。\nhttps://note.com/puregrinding1/n/na60936ff3ad1",
-    }
-    reply_text = REPLY_TEXTS.get(reply_url, reply_url)
-
-    # リプライ投稿（少し待ってから）
+    # リプライ
     time.sleep(3)
-    r_result = _post({"text": reply_text}, creds, reply_to_id=tweet_id)
-    reply_id = r_result["data"]["id"]
-    print(f"{LOG_PREFIX} ✅ リプライ完了: https://x.com/i/web/status/{reply_id}")
+    reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
+    print(f"{log_pfx} ✅ リプライ: https://x.com/i/web/status/{reply_id}")
 
     # 状態保存
-    state["next_index"] = idx + 1
-    state.setdefault("posted", []).append({
-        "index":    idx,
-        "tweet_id": tweet_id,
-        "reply_id": reply_id,
-        "posted_at": datetime.now().isoformat(),
-        "orig_date": orig_date,
+    state["posted_keys"].append(post["key"])
+    state["history"].append({
+        "key":       post["key"],
+        "category":  cat,
+        "tweet_id":  tweet_id,
+        "reply_id":  reply_id,
+        "posted_at": now.isoformat(),
     })
     save_state(state)
-    print(f"{LOG_PREFIX} 残り: {len(rows) - idx - 1}件")
 
 
 if __name__ == "__main__":
