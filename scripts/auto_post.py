@@ -271,7 +271,7 @@ def main():
 
     # 対象期間フィルター
     posts = [p for p in posts
-             if "2026-01-29" <= p["date"][:10] <= "2026-06-17"]
+             if "2026-03-08" <= p["date"][:10] <= "2026-06-17"]
 
     # カテゴリ別に未投稿を分類
     available: dict[str, list] = defaultdict(list)
