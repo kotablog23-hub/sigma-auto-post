@@ -41,6 +41,9 @@ ENV_PATH     = _BASE / ".env"
 TWEETS_URL       = "https://api.twitter.com/2/tweets"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 
+# ── Threads API エンドポイント ──────────────────────────────────
+THREADS_API = "https://graph.threads.net/v1.0"
+
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 # ── noteリンク自動分類 ──────────────────────────────────────────
@@ -233,6 +236,46 @@ def _post_tweet(body: dict, creds: dict, reply_to_id: str = None,
         raise RuntimeError(f"HTTP {e.code}: {e.read().decode()}") from e
 
 
+# ── Threads API ────────────────────────────────────────────────
+def _threads_get_user_id(token: str) -> str:
+    url = f"{THREADS_API}/me?fields=id&access_token={urllib.parse.quote(token, safe='')}"
+    try:
+        with urllib.request.urlopen(url) as resp:
+            return json.loads(resp.read())["id"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Threads /me HTTP {e.code}: {e.read().decode()}") from e
+
+
+def _post_threads(text: str, token: str, user_id: str, reply_to_id: str = None) -> str:
+    params = {"media_type": "TEXT", "text": text, "access_token": token}
+    if reply_to_id:
+        params["reply_to_id"] = reply_to_id
+    create_url = f"{THREADS_API}/{user_id}/threads"
+    req = urllib.request.Request(
+        create_url,
+        data=urllib.parse.urlencode(params).encode(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            container_id = json.loads(resp.read())["id"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Threads create HTTP {e.code}: {e.read().decode()}") from e
+
+    time.sleep(5)
+    pub_params = {"creation_id": container_id, "access_token": token}
+    pub_req = urllib.request.Request(
+        f"{THREADS_API}/{user_id}/threads_publish",
+        data=urllib.parse.urlencode(pub_params).encode(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(pub_req) as resp:
+            return json.loads(resp.read())["id"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Threads publish HTTP {e.code}: {e.read().decode()}") from e
+
+
 # ── 状態管理 ───────────────────────────────────────────────────
 def load_state() -> dict:
     if STATE_PATH.exists():
@@ -326,20 +369,40 @@ def main():
                             media_ids=media_ids or None)
     print(f"{log_pfx} ✅ 投稿: https://x.com/i/web/status/{tweet_id}")
 
-    # リプライ
+    # リプライ (X)
     time.sleep(3)
     reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
     print(f"{log_pfx} ✅ リプライ: https://x.com/i/web/status/{reply_id}")
 
+    # Threads 投稿（失敗してもX投稿は保存する）
+    th_post_id = th_reply_id = None
+    threads_token = os.environ.get("THREADS_ACCESS_TOKEN", "")
+    if threads_token:
+        try:
+            threads_uid = _threads_get_user_id(threads_token)
+            th_post_id = _post_threads(post["text"], threads_token, threads_uid)
+            print(f"{log_pfx} ✅ Threads投稿: {th_post_id}")
+            time.sleep(3)
+            th_reply_id = _post_threads(reply_text, threads_token, threads_uid,
+                                        reply_to_id=th_post_id)
+            print(f"{log_pfx} ✅ Threadsリプライ: {th_reply_id}")
+        except Exception as e:
+            print(f"{log_pfx} ⚠️ Threads投稿失敗（X投稿は成功）: {e}")
+
     # 状態保存
-    state["posted_keys"].append(post["key"])
-    state["history"].append({
+    history_entry = {
         "key":       post["key"],
         "category":  cat,
         "tweet_id":  tweet_id,
         "reply_id":  reply_id,
         "posted_at": now.isoformat(),
-    })
+    }
+    if th_post_id:
+        history_entry["threads_post_id"]  = th_post_id
+    if th_reply_id:
+        history_entry["threads_reply_id"] = th_reply_id
+    state["posted_keys"].append(post["key"])
+    state["history"].append(history_entry)
     save_state(state)
 
 
