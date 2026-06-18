@@ -27,7 +27,9 @@ import base64, hashlib, hmac, json, os, random, re, sys, time, uuid, zipfile
 import urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+JST = timezone(timedelta(hours=9))
 from pathlib import Path
 
 # ── パス（スクリプト位置基準で解決 → ローカル・GitHub Actions 共通） ──
@@ -290,8 +292,8 @@ def save_state(state: dict):
 # ── メイン ─────────────────────────────────────────────────────
 def main():
     load_env()
-    now     = datetime.now()
-    log_pfx = f"[{now.strftime('%Y-%m-%d %H:%M:%S')}]"
+    now     = datetime.now(JST)          # カテゴリ選択・ログはJST基準
+    log_pfx = f"[{now.strftime('%Y-%m-%d %H:%M:%S')} JST]"
     dry_run = "--dry-run" in sys.argv
     status  = "--status"  in sys.argv
 
@@ -395,7 +397,7 @@ def main():
         "category":  cat,
         "tweet_id":  tweet_id,
         "reply_id":  reply_id,
-        "posted_at": now.isoformat(),
+        "posted_at": now.isoformat(),   # JST
     }
     if th_post_id:
         history_entry["threads_post_id"]  = th_post_id
