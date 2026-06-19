@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-当日の投稿スケジュール確認スクリプト
+当日の投稿確認スクリプト
 
-今日の投稿スケジュール（GitHub Actionsの時刻）に基づいて、
-各スロットで投稿される予定の投稿文を全文表示する。
+・投稿済みスロット → stateファイルのhistoryから実際の投稿内容を表示
+・未投稿スロット   → シミュレーション（予測）を表示
 
 使い方:
   python3 check_today.py
 """
 
-import json, random, re, sys, zipfile
+import json, random, zipfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -22,16 +22,14 @@ NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 JST = timezone(timedelta(hours=9))
 
-# GitHub Actions のスケジュール（JST時刻）
-# 曜日: 0=月, 1=火, 2=水, 3=木, 4=金, 5=土, 6=日
 SCHEDULE = {
-    6: [12, 13, 14, 15, 16, 17, 19],       # 日
-    0: [12, 13, 15, 17, 19, 21],            # 月
-    1: [12, 15, 19, 21, 22],                # 火
-    2: [12, 15, 19, 21, 22],                # 水
-    3: [12, 15, 19, 21, 22],                # 木
-    4: [12, 13, 15, 19, 21],                # 金
-    5: [12, 19],                            # 土
+    6: [12, 13, 14, 15, 16, 17, 19],
+    0: [12, 13, 15, 17, 19, 21],
+    1: [12, 15, 19, 21, 22],
+    2: [12, 15, 19, 21, 22],
+    3: [12, 15, 19, 21, 22],
+    4: [12, 13, 15, 19, 21],
+    5: [12, 19],
 }
 
 NOTE_TITLES = {
@@ -39,6 +37,7 @@ NOTE_TITLES = {
     "shijaku":    "【スマホ中毒者向け】\"デジタル・ドーパミン廃人\"だった私がスクリーンタイム10時間→1時間で人生を奪還した思考法\nhttps://note.com/puregrinding1/n/n75b3881b4678",
     "zoryo":      "【ヒョロガリ向け】最短で「モテボディ」を獲得するための食事プログラム｜by元体重39kgのヒョロガリが解説。\nhttps://note.com/puregrinding1/n/na60936ff3ad1",
 }
+NOTE_NAMES = {"motemigaki": "男磨き大全", "shijaku": "静寂論", "zoryo": "増量ガイド"}
 NOTE_KW = {
     "motemigaki": ["モテ","恋愛","外見","見た目","コミュ","男磨き","清潔感","服装","ファッション",
                    "髪","女性","女子","チー牛","非モテ","デート","彼女","自己開示","会話","話し方",
@@ -117,60 +116,91 @@ def pick_category(hour, weekday, month, available):
 
 def main():
     now_jst = datetime.now(JST)
+    today_str = now_jst.strftime("%Y-%m-%d")
     today_wd = now_jst.weekday()
     today_month = now_jst.month
     slots = SCHEDULE.get(today_wd, [])
 
     day_names = ["月", "火", "水", "木", "金", "土", "日"]
     print(f"{'='*60}")
-    print(f"  {now_jst.strftime('%Y-%m-%d')} ({day_names[today_wd]}曜日) の投稿予定")
+    print(f"  {today_str} ({day_names[today_wd]}曜日) の投稿")
     print(f"  スロット数: {len(slots)}件  {[f'{h}:00' for h in slots]}")
     print(f"{'='*60}\n")
 
-    posts = load_posts()
+    # stateから今日の実績を取得
     state = json.loads(STATE_PATH.read_text(encoding="utf-8")) if STATE_PATH.exists() \
             else {"posted_keys": [], "history": []}
+
+    # 今日の投稿済み履歴をスロット時刻→エントリのマップに
+    actual_by_hour = {}
+    for h in state.get("history", []):
+        posted_at = h.get("posted_at", "")
+        if posted_at.startswith(today_str):
+            try:
+                hour = int(posted_at[11:13])
+                actual_by_hour[hour] = h
+            except Exception:
+                pass
+
+    # 投稿テキストをkeyから引くための辞書を構築
+    all_posts = load_posts()
+    key_to_text = {p["key"]: p["text"] for p in all_posts}
     posted_ks = set(state["posted_keys"])
 
-    # 対象期間フィルター（上限は実行当日）
-    today_str = now_jst.strftime("%Y-%m-%d")
-    posts = [p for p in posts if "2026-03-08" <= p["date"][:10] <= today_str]
-
-    # 各スロットをシミュレート（投稿済みセットを更新しながら順番に）
+    # シミュレーション用（未投稿スロット向け）
+    today_posts = [p for p in all_posts if "2026-03-08" <= p["date"][:10] <= today_str]
     sim_posted = set(posted_ks)
 
     for slot_hour in slots:
-        available = defaultdict(list)
-        for p in posts:
-            if p["key"] not in sim_posted:
-                available[p["time_category"]].append(p)
-
-        cat = pick_category(slot_hour, today_wd, today_month, available)
-
         print(f"┌─ {slot_hour:02d}:00 JST {'─'*45}")
-        if cat is None:
-            print(f"│  ⚠️  投稿可能な投稿なし")
-            print(f"└{'─'*50}\n")
-            continue
 
-        post = sorted(available[cat], key=lambda p: p["date"])[0]
-        note_cat = classify_note(post["text"])
+        if slot_hour in actual_by_hour:
+            # 実投稿済み
+            entry = actual_by_hour[slot_hour]
+            key = entry.get("key", "")
+            text = key_to_text.get(key, "（本文取得不可）")
+            note_cat = classify_note(text)
+            print(f"│  ✅ 投稿済み")
+            print(f"│")
+            for line in text.splitlines():
+                print(f"│  {line}")
+            print(f"│")
+            print(f"│  ▷ noteリンク ({NOTE_NAMES[note_cat]}):")
+            for line in NOTE_TITLES[note_cat].splitlines():
+                print(f"│    {line}")
+            # シミュレーションのpostedセットにも追加
+            sim_posted.add(key)
 
-        print(f"│  カテゴリ: {cat}  |  noteリンク: {note_cat}")
-        print(f"│  元日時: {post['date']}")
-        print(f"│")
-        for line in post["text"].splitlines():
-            print(f"│  {line}")
-        print(f"│")
-        note_names = {"motemigaki": "男磨き大全", "shijaku": "静寂論", "zoryo": "増量ガイド"}
-        print(f"│  ▷ noteリンク ({note_names[note_cat]}):")
-        for line in NOTE_TITLES[note_cat].splitlines():
-            print(f"│    {line}")
+        elif slot_hour > now_jst.hour:
+            # 未来スロット → シミュレーション
+            available = defaultdict(list)
+            for p in today_posts:
+                if p["key"] not in sim_posted:
+                    available[p["time_category"]].append(p)
+
+            cat = pick_category(slot_hour, today_wd, today_month, available)
+            if cat is None:
+                print(f"│  ⚠️  投稿可能な投稿なし（予測）")
+            else:
+                post = sorted(available[cat], key=lambda p: p["date"])[0]
+                note_cat = classify_note(post["text"])
+                print(f"│  📅 予測（実際と異なる場合あり）")
+                print(f"│")
+                for line in post["text"].splitlines():
+                    print(f"│  {line}")
+                print(f"│")
+                print(f"│  ▷ noteリンク ({NOTE_NAMES[note_cat]}):")
+                for line in NOTE_TITLES[note_cat].splitlines():
+                    print(f"│    {line}")
+                sim_posted.add(post["key"])
+
+        else:
+            # 過去スロットなのに実績なし（スキップまたはエラー）
+            print(f"│  ⚠️  記録なし（GitHub Actionsが未実行の可能性）")
+
         print(f"└{'─'*50}\n")
 
-        sim_posted.add(post["key"])
-
-    total_remaining = sum(1 for p in posts if p["key"] not in posted_ks)
+    total_remaining = sum(1 for p in today_posts if p["key"] not in posted_ks)
     print(f"現在の未投稿残り: {total_remaining}件")
 
 
