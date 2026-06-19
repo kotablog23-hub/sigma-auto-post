@@ -314,9 +314,10 @@ def main():
     posted_ks = set(state["posted_keys"])
     media_map = load_media_map()
 
-    # 対象期間フィルター
+    # 対象期間フィルター（上限は実行当日）
+    today_str = now.strftime("%Y-%m-%d")
     posts = [p for p in posts
-             if "2026-03-08" <= p["date"][:10] <= "2026-06-17"]
+             if "2026-03-08" <= p["date"][:10] <= today_str]
 
     # カテゴリ別に未投稿を分類
     available: dict[str, list] = defaultdict(list)

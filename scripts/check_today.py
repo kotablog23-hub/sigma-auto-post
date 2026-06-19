@@ -132,8 +132,9 @@ def main():
             else {"posted_keys": [], "history": []}
     posted_ks = set(state["posted_keys"])
 
-    # 対象期間フィルター
-    posts = [p for p in posts if "2026-03-08" <= p["date"][:10] <= "2026-06-17"]
+    # 対象期間フィルター（上限は実行当日）
+    today_str = now_jst.strftime("%Y-%m-%d")
+    posts = [p for p in posts if "2026-03-08" <= p["date"][:10] <= today_str]
 
     # 各スロットをシミュレート（投稿済みセットを更新しながら順番に）
     sim_posted = set(posted_ks)
