@@ -148,7 +148,9 @@ def main():
     posted_ks = set(state["posted_keys"])
 
     # シミュレーション用（未投稿スロット向け）
-    today_posts = [p for p in all_posts if "2026-03-08" <= p["date"][:10] <= today_str]
+    from datetime import timedelta
+    cutoff_str = (now_jst - timedelta(days=60)).strftime("%Y-%m-%d")
+    today_posts = [p for p in all_posts if "2026-03-08" <= p["date"][:10] <= cutoff_str]
     sim_posted = set(posted_ks)
 
     for slot_hour in slots:
