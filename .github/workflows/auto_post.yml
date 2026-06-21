@@ -11,6 +11,13 @@ on:
         required: false
         default: 'false'
         type: boolean
+  schedule:
+    # 夕方5スロット（JST = UTC+9）
+    - cron: '7 9 * * *'    # 18:07 JST
+    - cron: '43 9 * * *'   # 18:43 JST
+    - cron: '21 10 * * *'  # 19:21 JST
+    - cron: '17 11 * * *'  # 20:17 JST
+    - cron: '38 12 * * *'  # 21:38 JST
 
 concurrency:
   group: auto-post
