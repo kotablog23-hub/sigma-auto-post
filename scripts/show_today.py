@@ -112,16 +112,16 @@ for t in future_slots:
                      for cat, ps in available_map.items()}
     cat = pick_category(h2, wd_num, sim_available)
     if cat is None:
-        simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定(予測)"})
+        simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定"})
         continue
     candidates = sorted([x for x in sim_available[cat] if x["key"] not in sim_used],
                         key=lambda x: x["date"])
     if not candidates:
-        simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定(予測)"})
+        simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定"})
         continue
     chosen = candidates[0]
     sim_used.add(chosen["key"])
-    simulated.append({"time": t, "text": chosen["text"], "status": "予定(予測)"})
+    simulated.append({"time": t, "text": chosen["text"], "status": "予定"})
 
 # ── 表示 ──────────────────────────────────────────────────────────
 all_entries = sorted(confirmed + simulated, key=lambda x: x["time"])
