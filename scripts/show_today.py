@@ -87,10 +87,7 @@ if sched_file.exists():
     sched = json.loads(sched_file.read_text())
     for t in sched["schedule"].get(weekday, []):
         if t in posted_times: continue
-        h2, m2 = map(int, t.split(":"))
-        target = datetime(now.year, now.month, now.day, h2, m2, tzinfo=JST)
-        if target > now:
-            future_slots.append(t)
+        future_slots.append(t)
 
 # シミュレーション用：eligible未投稿を用意（60日以内・2026-03-08以降）
 cutoff = (now - timedelta(days=60)).strftime("%Y-%m-%d")
