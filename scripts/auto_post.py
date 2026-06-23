@@ -86,9 +86,14 @@ def load_env():
 # ── xlsx 読み込み ───────────────────────────────────────────────
 def load_posts() -> list[dict]:
     with zipfile.ZipFile(XLSX_PATH) as zf:
-        sst_root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
-        strings = [si.find(f"{{{NS}}}t").text or ""
-                   for si in sst_root.findall(f"{{{NS}}}si")]
+        if "xl/sharedStrings.xml" in zf.namelist():
+            sst_root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+            strings = []
+            for si in sst_root.findall(f"{{{NS}}}si"):
+                parts = si.findall(f".//{{{NS}}}t")
+                strings.append("".join(t.text or "" for t in parts))
+        else:
+            strings = []
         sheet_root = ET.fromstring(zf.read("xl/worksheets/sheet1.xml"))
 
     posts = []
@@ -97,9 +102,19 @@ def load_posts() -> list[dict]:
         if not cells:
             continue
         def val(c):
+            t_attr = c.get("t")
+            if t_attr == "s":
+                v = c.find(f"{{{NS}}}v")
+                return strings[int(v.text)] if v is not None else ""
+            if t_attr == "inlineStr":
+                is_elem = c.find(f"{{{NS}}}is")
+                if is_elem is not None:
+                    parts = is_elem.findall(f".//{{{NS}}}t")
+                    return "".join(p.text or "" for p in parts)
+                return ""
             v = c.find(f"{{{NS}}}v")
             if v is None: return ""
-            return strings[int(v.text)] if c.get("t") == "s" else (v.text or "")
+            return v.text or ""
         r = [val(c) for c in cells]
         if len(r) < 5 or r[1] == "投稿文":
             continue
