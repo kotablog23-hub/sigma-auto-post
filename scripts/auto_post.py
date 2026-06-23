@@ -354,6 +354,11 @@ def main():
         print(f"{log_pfx} ✅ 全投稿完了")
         return
 
+    # 時間ゲート: 07:00〜23:00 JST以外は絶対に投稿しない（GHA cronの遅延対策）
+    if not dry_run and not (7 <= now.hour < 23):
+        print(f"{log_pfx} ⛔ 投稿禁止時間帯 ({now.hour}時 JST) → スキップ")
+        return
+
     # 二重投稿防止: 直近30分以内に投稿済みならスキップ（cron-job.org+GHA同時発火対策）
     # スキップ記録（noteあり）は実投稿としてカウントしない
     if not dry_run and state.get("history"):
