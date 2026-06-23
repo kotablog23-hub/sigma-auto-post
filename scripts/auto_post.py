@@ -355,17 +355,20 @@ def main():
         return
 
     # 二重投稿防止: 直近30分以内に投稿済みならスキップ（cron-job.org+GHA同時発火対策）
+    # スキップ記録（noteあり）は実投稿としてカウントしない
     if not dry_run and state.get("history"):
         try:
-            last_at = state["history"][-1].get("posted_at", "")
-            if last_at:
-                last_dt = datetime.fromisoformat(last_at)
-                if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=JST)
-                elapsed = (now - last_dt.astimezone(JST)).total_seconds()
-                if elapsed < 30 * 60:
-                    print(f"{log_pfx} ⏭ 直近{int(elapsed/60)}分前に投稿済み → 重複スキップ")
-                    return
+            real_posts = [h for h in state["history"] if not h.get("note")]
+            if real_posts:
+                last_at = real_posts[-1].get("posted_at", "")
+                if last_at:
+                    last_dt = datetime.fromisoformat(last_at)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=JST)
+                    elapsed = (now - last_dt.astimezone(JST)).total_seconds()
+                    if elapsed < 30 * 60:
+                        print(f"{log_pfx} ⏭ 直近{int(elapsed/60)}分前に投稿済み → 重複スキップ")
+                        return
         except Exception:
             pass
 
