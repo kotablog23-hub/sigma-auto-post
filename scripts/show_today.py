@@ -68,7 +68,7 @@ for h in state.get("history", []):
         if dt.tzinfo is None: dt = dt.replace(tzinfo=JST)
         dt = dt.astimezone(JST)
     except: continue
-    if dt.strftime("%Y-%m-%d") == today_str:
+    if dt.strftime("%Y-%m-%d") == today_str and not h.get("note"):
         confirmed.append({"time": dt.strftime("%H:%M"), "key": h["key"], "status": "投稿済み"})
 posted_times = {p["time"] for p in confirmed}
 
