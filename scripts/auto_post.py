@@ -359,16 +359,6 @@ def main():
         print(f"{log_pfx} ⛔ 投稿禁止時間帯 ({now.hour}時 JST) → スキップ")
         return
 
-    # スケジュールゲート: cronjob_schedule.jsonに定義されたスロット以外はスキップ
-    sched_file = _BASE / "scripts/cronjob_schedule.json"
-    if not dry_run and sched_file.exists():
-        sched = json.loads(sched_file.read_text(encoding="utf-8"))
-        wd_str = now.strftime("%a")
-        current_hhmm = now.strftime("%H:%M")
-        allowed_slots = sched.get("schedule", {}).get(wd_str, [])
-        if current_hhmm not in allowed_slots:
-            print(f"{log_pfx} ⛔ スケジュール外 ({wd_str} {current_hhmm}) → スキップ")
-            return
 
     # 二重投稿防止: 直近30分以内に投稿済みならスキップ（cron-job.org+GHA同時発火対策）
     # スキップ記録（noteあり）は実投稿としてカウントしない
