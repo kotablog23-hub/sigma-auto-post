@@ -412,11 +412,6 @@ def main():
                             media_ids=media_ids or None)
     print(f"{log_pfx} ✅ 投稿: https://x.com/i/web/status/{tweet_id}")
 
-    # リプライ (X)
-    time.sleep(3)
-    reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
-    print(f"{log_pfx} ✅ リプライ: https://x.com/i/web/status/{reply_id}")
-
     # Threads 投稿（失敗してもX投稿は保存する）
     th_post_id = th_reply_id = None
     threads_token = os.environ.get("THREADS_ACCESS_TOKEN", "")
@@ -425,25 +420,19 @@ def main():
             threads_uid = _threads_get_user_id(threads_token)
             th_post_id = _post_threads(post["text"], threads_token, threads_uid)
             print(f"{log_pfx} ✅ Threads投稿: {th_post_id}")
-            time.sleep(3)
-            th_reply_id = _post_threads(reply_text, threads_token, threads_uid,
-                                        reply_to_id=th_post_id)
-            print(f"{log_pfx} ✅ Threadsリプライ: {th_reply_id}")
         except Exception as e:
             print(f"{log_pfx} ⚠️ Threads投稿失敗（X投稿は成功）: {e}")
 
     # 状態保存
+    reply_id = None
     history_entry = {
         "key":       post["key"],
         "category":  cat,
         "tweet_id":  tweet_id,
-        "reply_id":  reply_id,
         "posted_at": now.isoformat(),   # JST
     }
     if th_post_id:
-        history_entry["threads_post_id"]  = th_post_id
-    if th_reply_id:
-        history_entry["threads_reply_id"] = th_reply_id
+        history_entry["threads_post_id"] = th_post_id
     state["posted_keys"].append(post["key"])
     state["history"].append(history_entry)
     save_state(state)
