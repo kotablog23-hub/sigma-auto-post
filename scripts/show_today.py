@@ -70,7 +70,25 @@ for h in state.get("history", []):
     except: continue
     if dt.strftime("%Y-%m-%d") == today_str and not h.get("note"):
         confirmed.append({"time": dt.strftime("%H:%M"), "key": h["key"], "status": "投稿済み"})
-posted_times = {p["time"] for p in confirmed}
+# 投稿済み時刻をスケジュールスロットに±5分でマッチさせる
+def match_slot(posted_time, slots):
+    ph, pm = map(int, posted_time.split(":"))
+    for s in slots:
+        sh, sm = map(int, s.split(":"))
+        if abs((ph * 60 + pm) - (sh * 60 + sm)) <= 5:
+            return s
+    return posted_time
+
+sched_file_tmp = BASE / "scripts/cronjob_schedule.json"
+all_slots = []
+if sched_file_tmp.exists():
+    _sched = json.loads(sched_file_tmp.read_text())
+    all_slots = _sched["schedule"].get(weekday, [])
+
+for p in confirmed:
+    p["slot"] = match_slot(p["time"], all_slots)
+
+posted_times = {p["slot"] for p in confirmed}
 
 # xlsxから全文マップ構築
 all_posts = load_posts()
@@ -121,9 +139,9 @@ for t in future_slots:
     simulated.append({"time": t, "text": chosen["text"], "status": "予定"})
 
 # ── 表示 ──────────────────────────────────────────────────────────
-all_entries = sorted(confirmed + simulated, key=lambda x: x["time"])
+all_entries = sorted(simulated, key=lambda x: x["time"])
 print(f"\n=== 今日のポスト ({today_str} {weekday}) ===\n")
 for i, p in enumerate(all_entries, 1):
-    print(f"[{i}] {p['time']} [{p['status']}]")
+    print(f"[{i}] {p['time']} [予定]")
     print(p["text"])
     print()
