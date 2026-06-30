@@ -125,6 +125,7 @@ def load_posts() -> list[dict]:
             "rts":           int(r[3] or 0),
             "time_category": r[4] if len(r) > 4 else "normal",
             "key":           f"{r[0]}|{r[1][:40]}",
+            "image_path":    r[6] if len(r) > 6 else "",
         })
     return posts
 
@@ -212,6 +213,29 @@ def _oauth_header(method: str, url: str, creds: dict) -> str:
     ).decode()
     p["oauth_signature"] = sig
     return "OAuth " + ", ".join(f'{k}="{_pct(v)}"' for k, v in sorted(p.items()))
+
+
+def _upload_media_local(filepath: str, creds: dict) -> str:
+    path = Path(filepath) if Path(filepath).is_absolute() else _BASE / filepath
+    img_data = path.read_bytes()
+    ext = path.suffix.lower()
+    content_type = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                    "gif": "image/gif", "webp": "image/webp"}.get(ext.lstrip("."), "image/jpeg")
+    boundary = uuid.uuid4().hex
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"media\"\r\n"
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode() + img_data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        MEDIA_UPLOAD_URL, data=body, method="POST",
+        headers={"Authorization": _oauth_header("POST", MEDIA_UPLOAD_URL, creds),
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())["media_id_string"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Media upload HTTP {e.code}: {e.read().decode()}") from e
 
 
 def _upload_media(img_url: str, creds: dict) -> str:
@@ -389,23 +413,29 @@ def main():
 
     note_cat   = classify_note(post["text"])
     reply_text = REPLY_TEXTS[note_cat]
-    img_urls   = media_map.get(post["date"], [])
+    local_img  = post.get("image_path", "")
+    img_urls   = [] if local_img else media_map.get(post["date"], [])
 
     print(f"{log_pfx} カテゴリ: {cat} | note: {note_cat}")
     print(f"{log_pfx} 元日時: {post['date']}")
     print(f"{log_pfx} 本文: {post['text'][:80]}{'...' if len(post['text'])>80 else ''}")
-    print(f"{log_pfx} 画像: {len(img_urls)}枚 | 残り: {total_remaining-1}件")
+    print(f"{log_pfx} 画像: {'ローカル:'+local_img if local_img else str(len(img_urls))+'枚'} | 残り: {total_remaining-1}件")
 
     if dry_run:
         print(f"{log_pfx} [DRY RUN] スキップ")
         return
 
-    # 画像アップロード
+    # 画像アップロード（ローカルファイル優先、なければX CDN）
     media_ids = []
-    for img_url in img_urls[:4]:
-        mid = _upload_media(img_url, creds)
+    if local_img:
+        mid = _upload_media_local(local_img, creds)
         media_ids.append(mid)
-        print(f"{log_pfx} 画像アップ: {img_url.split('/')[-1]} → {mid}")
+        print(f"{log_pfx} 画像アップ(local): {local_img} → {mid}")
+    else:
+        for img_url in img_urls[:4]:
+            mid = _upload_media(img_url, creds)
+            media_ids.append(mid)
+            print(f"{log_pfx} 画像アップ: {img_url.split('/')[-1]} → {mid}")
 
     # 本文投稿
     tweet_id = _post_tweet({"text": post["text"]}, creds,
