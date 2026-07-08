@@ -53,7 +53,9 @@ REPLY_TEXTS = {
     "motemigaki": "「爆速でモテる男磨きのやり方」非モテが恋愛の土台を築き上げる男磨きby元自閉症チー牛が解説\nhttps://note.com/puregrinding1/n/n4eabc4c9b556",
     "shijaku":    "【スマホ中毒者向け】\"デジタル・ドーパミン廃人\"だった私がスクリーンタイム10時間→1時間で人生を奪還した思考法\nhttps://note.com/puregrinding1/n/n75b3881b4678",
     "zoryo":      "【ヒョロガリ向け】最短で「モテボディ」を獲得するための食事プログラム｜by元体重39kgのヒョロガリが解説。\nhttps://note.com/puregrinding1/n/na60936ff3ad1",
+    "fixed":      "https://x.com/puregrinding23/status/2058145954361123021",
 }
+THREADS_REPLY_FIXED = "https://www.threads.com/@liam.sgm23/post/DZrrwSmjwXE?hl=ja"
 NOTE_KW = {
     "motemigaki": ["モテ","恋愛","外見","見た目","コミュ","男磨き","清潔感","服装","ファッション",
                    "髪","女性","女子","チー牛","非モテ","デート","彼女","自己開示","会話","話し方",
@@ -69,7 +71,7 @@ NOTE_KW = {
 def classify_note(text: str) -> str:
     scores = {k: sum(1 for w in ws if w in text) for k, ws in NOTE_KW.items()}
     best = max(scores, key=scores.get)
-    return best if scores[best] > 0 else "motemigaki"
+    return best if scores[best] > 0 else "fixed"
 
 
 # ── .env 読み込み ───────────────────────────────────────────────
@@ -442,6 +444,10 @@ def main():
                             media_ids=media_ids or None)
     print(f"{log_pfx} ✅ 投稿: https://x.com/i/web/status/{tweet_id}")
 
+    # noteリンクリプライ
+    reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
+    print(f"{log_pfx} ✅ リプライ({note_cat}): {reply_text[:60]}...")
+
     # Threads 投稿（失敗してもX投稿は保存する）
     th_post_id = th_reply_id = None
     threads_token = os.environ.get("THREADS_ACCESS_TOKEN", "")
@@ -450,19 +456,24 @@ def main():
             threads_uid = _threads_get_user_id(threads_token)
             th_post_id = _post_threads(post["text"], threads_token, threads_uid)
             print(f"{log_pfx} ✅ Threads投稿: {th_post_id}")
+            th_reply_text = THREADS_REPLY_FIXED if note_cat == "fixed" else reply_text
+            th_reply_id = _post_threads(th_reply_text, threads_token, threads_uid, reply_to_id=th_post_id)
+            print(f"{log_pfx} ✅ Threadsリプライ: {th_reply_id}")
         except Exception as e:
             print(f"{log_pfx} ⚠️ Threads投稿失敗（X投稿は成功）: {e}")
 
     # 状態保存
-    reply_id = None
     history_entry = {
         "key":       post["key"],
         "category":  cat,
         "tweet_id":  tweet_id,
+        "reply_id":  reply_id,
         "posted_at": now.isoformat(),   # JST
     }
     if th_post_id:
         history_entry["threads_post_id"] = th_post_id
+    if th_reply_id:
+        history_entry["threads_reply_id"] = th_reply_id
     state["posted_keys"].append(post["key"])
     state["history"].append(history_entry)
     save_state(state)
