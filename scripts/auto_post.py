@@ -445,8 +445,12 @@ def main():
     print(f"{log_pfx} ✅ 投稿: https://x.com/i/web/status/{tweet_id}")
 
     # noteリンクリプライ
-    reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
-    print(f"{log_pfx} ✅ リプライ({note_cat}): {reply_text[:60]}...")
+    reply_id = None
+    try:
+        reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
+        print(f"{log_pfx} ✅ リプライ({note_cat}): {reply_text[:60]}...")
+    except Exception as e:
+        print(f"{log_pfx} ⚠️ リプライ失敗: {e}")
 
     # Threads 投稿（失敗してもX投稿は保存する）
     th_post_id = th_reply_id = None
