@@ -10,6 +10,11 @@ JST = timezone(timedelta(hours=9))
 BASE = Path("~/sigma").expanduser()
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
+# auto_post.py と同じnote分類ロジックを共有（定数を二重管理しない）
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from auto_post import classify_note, REPLY_TEXTS
+
 # 最新stateをGitHubから取得
 subprocess.run(["git", "-C", str(BASE), "pull", "--quiet"], capture_output=True)
 
@@ -136,7 +141,9 @@ for t in future_slots:
         continue
     chosen = candidates[0]
     sim_used.add(chosen["key"])
-    simulated.append({"time": t, "text": chosen["text"], "status": "予定"})
+    note_cat = classify_note(chosen["text"])
+    simulated.append({"time": t, "text": chosen["text"], "status": "予定",
+                      "note_cat": note_cat, "reply": REPLY_TEXTS[note_cat]})
 
 # ── 表示 ──────────────────────────────────────────────────────────
 all_entries = sorted(simulated, key=lambda x: x["time"])
@@ -144,4 +151,7 @@ print(f"\n=== 今日のポスト ({today_str} {weekday}) ===\n")
 for i, p in enumerate(all_entries, 1):
     print(f"[{i}] {p['time']} [予定]")
     print(p["text"])
+    if p.get("reply"):
+        label = "固定ポスト" if p.get("note_cat") == "fixed" else f"note:{p.get('note_cat')}"
+        print(f"\n└ リプ({label}):\n{p['reply']}")
     print()
