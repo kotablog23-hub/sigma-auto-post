@@ -152,6 +152,8 @@ for i, p in enumerate(all_entries, 1):
     print(f"[{i}] {p['time']} [予定]")
     print(p["text"])
     if p.get("reply"):
-        label = "固定ポスト" if p.get("note_cat") == "fixed" else f"note:{p.get('note_cat')}"
-        print(f"\n└ リプ({label}):\n{p['reply']}")
+        names = {"motemigaki": "男磨き大全", "zoryo": "増量ガイド",
+                 "shijaku": "静寂論", "fixed": "固定リプ"}
+        label = names.get(p.get("note_cat"), p.get("note_cat"))
+        print(f"\n└ リプ：{label}")
     print()
