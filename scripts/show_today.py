@@ -33,7 +33,8 @@ def load_posts():
         date = str(row[0])
         text = str(row[1])
         cat  = str(row[4]) if len(row) > 4 and row[4] else "normal"
-        posts.append({"date": date, "text": text, "cat": cat,
+        img  = str(row[6]) if len(row) > 6 and row[6] else ""
+        posts.append({"date": date, "text": text, "cat": cat, "image": img,
                       "key": f"{row[0]}|{text[:40]}"})
     return posts
 
@@ -143,7 +144,8 @@ for t in future_slots:
     sim_used.add(chosen["key"])
     note_cat = classify_note(chosen["text"])
     simulated.append({"time": t, "text": chosen["text"], "status": "予定",
-                      "note_cat": note_cat, "reply": REPLY_TEXTS[note_cat]})
+                      "note_cat": note_cat, "reply": REPLY_TEXTS[note_cat],
+                      "image": chosen.get("image", "")})
 
 # ── 表示 ──────────────────────────────────────────────────────────
 all_entries = sorted(simulated, key=lambda x: x["time"])
@@ -151,6 +153,8 @@ print(f"\n=== 今日のポスト ({today_str} {weekday}) ===\n")
 for i, p in enumerate(all_entries, 1):
     print(f"[{i}] {p['time']} [予定]")
     print(p["text"])
+    if p.get("image"):
+        print(f"\n[画像] {p['image']}")
     if p.get("reply"):
         names = {"motemigaki": "男磨き大全", "zoryo": "増量ガイド",
                  "shijaku": "静寂論", "fixed": "固定リプ"}
