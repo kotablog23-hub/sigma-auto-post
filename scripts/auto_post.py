@@ -173,7 +173,7 @@ def pick_category(now: datetime, available: dict) -> str | None:
     elif wd == 6:              primary = "sunday"
     elif 6 <= h < 9:           primary = "morning"
     elif 12 <= h < 13:         primary = "lunch"
-    elif 19 <= h < 22:         primary = "night"
+    elif 21 <= h < 22:         primary = "night"
     else:                      primary = "normal"
 
     # 優先カテゴリに未投稿があればそれを使う
