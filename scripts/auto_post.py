@@ -417,12 +417,13 @@ def main():
     note_cat   = classify_note(post["text"])
     reply_text = REPLY_TEXTS[note_cat]
     local_img  = post.get("image_path", "")
-    img_urls   = [] if local_img else media_map.get(post["date"], [])
+    local_imgs = [p.strip() for p in local_img.split(",") if p.strip()] if local_img else []
+    img_urls   = [] if local_imgs else media_map.get(post["date"], [])
 
     print(f"{log_pfx} カテゴリ: {cat} | note: {note_cat}")
     print(f"{log_pfx} 元日時: {post['date']}")
     print(f"{log_pfx} 本文: {post['text'][:80]}{'...' if len(post['text'])>80 else ''}")
-    print(f"{log_pfx} 画像: {'ローカル:'+local_img if local_img else str(len(img_urls))+'枚'} | 残り: {total_remaining-1}件")
+    print(f"{log_pfx} 画像: {'ローカル:'+local_img if local_imgs else str(len(img_urls))+'枚'} | 残り: {total_remaining-1}件")
 
     if dry_run:
         print(f"{log_pfx} [DRY RUN] スキップ")
@@ -430,10 +431,11 @@ def main():
 
     # 画像アップロード（ローカルファイル優先、なければX CDN）
     media_ids = []
-    if local_img:
-        mid = _upload_media_local(local_img, creds)
-        media_ids.append(mid)
-        print(f"{log_pfx} 画像アップ(local): {local_img} → {mid}")
+    if local_imgs:
+        for limg in local_imgs[:4]:
+            mid = _upload_media_local(limg, creds)
+            media_ids.append(mid)
+            print(f"{log_pfx} 画像アップ(local): {limg} → {mid}")
     else:
         for img_url in img_urls[:4]:
             mid = _upload_media(img_url, creds)
