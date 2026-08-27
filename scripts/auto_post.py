@@ -171,7 +171,7 @@ def pick_category(now: datetime, available: dict) -> str | None:
     # 時間・曜日による優先カテゴリ
     if wd == 4 and h >= 19:   primary = "friday"
     elif wd == 6:              primary = "sunday"
-    elif 7 <= h < 9:           primary = "morning"
+    elif 6 <= h < 9:           primary = "morning"
     elif 12 <= h < 13:         primary = "lunch"
     elif 19 <= h < 22:         primary = "night"
     else:                      primary = "normal"
