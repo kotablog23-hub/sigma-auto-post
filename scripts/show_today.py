@@ -34,7 +34,9 @@ def load_posts():
         text = str(row[1])
         cat  = str(row[4]) if len(row) > 4 and row[4] else "normal"
         img  = str(row[6]) if len(row) > 6 and row[6] else ""
+        override = str(row[5]) if len(row) > 5 and row[5] else ""
         posts.append({"date": date, "text": text, "cat": cat, "image": img,
+                      "note_cat_override": override,
                       "key": f"{row[0]}|{text[:40]}"})
     return posts
 
@@ -142,7 +144,7 @@ for t in future_slots:
         continue
     chosen = candidates[0]
     sim_used.add(chosen["key"])
-    note_cat = classify_note(chosen["text"])
+    note_cat = chosen.get("note_cat_override") or classify_note(chosen["text"])
     simulated.append({"time": t, "text": chosen["text"], "status": "予定",
                       "note_cat": note_cat, "reply": REPLY_TEXTS[note_cat],
                       "image": chosen.get("image", "")})

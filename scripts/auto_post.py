@@ -122,13 +122,14 @@ def load_posts() -> list[dict]:
         if len(r) < 5 or r[1] == "投稿文":
             continue
         posts.append({
-            "date":          r[0],
-            "text":          r[1],
-            "likes":         int(r[2] or 0),
-            "rts":           int(r[3] or 0),
-            "time_category": r[4] if len(r) > 4 else "normal",
-            "key":           f"{r[0]}|{r[1][:40]}",
-            "image_path":    r[6] if len(r) > 6 else "",
+            "date":              r[0],
+            "text":              r[1],
+            "likes":             int(r[2] or 0),
+            "rts":               int(r[3] or 0),
+            "time_category":     r[4] if len(r) > 4 else "normal",
+            "note_cat_override": r[5] if len(r) > 5 else "",
+            "key":               f"{r[0]}|{r[1][:40]}",
+            "image_path":        r[6] if len(r) > 6 else "",
         })
     return posts
 
@@ -414,7 +415,7 @@ def main():
     # カテゴリ内で日付順に選択
     post = sorted(available[cat], key=lambda p: p["date"])[0]
 
-    note_cat   = classify_note(post["text"])
+    note_cat   = post.get("note_cat_override") or classify_note(post["text"])
     reply_text = REPLY_TEXTS[note_cat]
     local_img  = post.get("image_path", "")
     local_imgs = [p.strip() for p in local_img.split(",") if p.strip()] if local_img else []
