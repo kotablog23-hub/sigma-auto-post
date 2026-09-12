@@ -13,7 +13,7 @@ NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 # auto_post.py と同じnote分類ロジックを共有（定数を二重管理しない）
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from auto_post import classify_note, REPLY_TEXTS
+from auto_post import classify_note, REPLY_TEXTS, pick_category
 
 # 最新stateをGitHubから取得
 subprocess.run(["git", "-C", str(BASE), "pull", "--quiet"], capture_output=True)
@@ -39,22 +39,6 @@ def load_posts():
                       "note_cat_override": override,
                       "key": f"{row[0]}|{text[:40]}"})
     return posts
-
-# ── auto_post.pyと同じカテゴリ選択ロジック ──────────────────────
-def pick_category(hour, wd_num, available):
-    if wd_num == 4 and hour >= 19:   primary = "friday"
-    elif wd_num == 6:                 primary = "sunday"
-    elif 7 <= hour < 9:              primary = "morning"
-    elif 12 <= hour < 13:            primary = "lunch"
-    elif 19 <= hour < 22:            primary = "night"
-    else:                             primary = "normal"
-    if primary != "normal" and available.get(primary):
-        return primary
-    if available.get("normal"):
-        return "normal"
-    for cat in ["morning","night","lunch","sunday","friday","summer","spring","exam"]:
-        if available.get(cat): return cat
-    return None
 
 # ── 投稿済みキーを読み込み ────────────────────────────────────────
 state_file = BASE / "x_posts/.smart_post_state.json"
@@ -133,7 +117,8 @@ for t in future_slots:
     # その時刻でのカテゴリ判定
     sim_available = {cat: [x for x in ps if x["key"] not in sim_used]
                      for cat, ps in available_map.items()}
-    cat = pick_category(h2, wd_num, sim_available)
+    sim_dt = now.replace(hour=h2, minute=m2, second=0)
+    cat = pick_category(sim_dt, sim_available)
     if cat is None:
         simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定"})
         continue
