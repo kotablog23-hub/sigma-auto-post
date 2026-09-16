@@ -135,10 +135,11 @@ for t in future_slots:
                       "image": chosen.get("image", "")})
 
 # ── 表示 ──────────────────────────────────────────────────────────
-all_entries = sorted(simulated, key=lambda x: x["time"])
+all_entries = sorted(confirmed + simulated, key=lambda x: x["time"])
 print(f"\n=== 今日のポスト ({today_str} {weekday}) ===\n")
 for i, p in enumerate(all_entries, 1):
-    print(f"[{i}] {p['time']} [予定]")
+    status_label = p.get("status", "予定")
+    print(f"[{i}] {p['time']} [{status_label}]")
     print(p["text"])
     if p.get("image"):
         print(f"\n[画像] {p['image']}")
