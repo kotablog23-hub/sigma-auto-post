@@ -49,6 +49,8 @@ THREADS_API = "https://graph.threads.net/v1.0"
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 # ── noteリンク自動分類 ──────────────────────────────────────────
+REPLY_ENABLED = False  # リプ無効化中。再開するにはTrueに変更
+
 REPLY_TEXTS = {
     "motemigaki": "「爆速でモテる男磨きのやり方」非モテが恋愛の土台を築き上げる男磨きby元自閉症チー牛が解説\nhttps://note.com/puregrinding1/n/n4eabc4c9b556",
     "shijaku":    "【スマホ中毒者向け】\"デジタル・ドーパミン廃人\"だった私がスクリーンタイム10時間→1時間で人生を奪還した思考法\nhttps://note.com/puregrinding1/n/n75b3881b4678",
@@ -448,13 +450,14 @@ def main():
                             media_ids=media_ids or None)
     print(f"{log_pfx} ✅ 投稿: https://x.com/i/web/status/{tweet_id}")
 
-    # noteリンクリプライ
+    # noteリンクリプライ（REPLY_ENABLED = False で無効化）
     reply_id = None
-    try:
-        reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
-        print(f"{log_pfx} ✅ リプライ({note_cat}): {reply_text[:60]}...")
-    except Exception as e:
-        print(f"{log_pfx} ⚠️ リプライ失敗: {e}")
+    if REPLY_ENABLED:
+        try:
+            reply_id = _post_tweet({"text": reply_text}, creds, reply_to_id=tweet_id)
+            print(f"{log_pfx} ✅ リプライ({note_cat}): {reply_text[:60]}...")
+        except Exception as e:
+            print(f"{log_pfx} ⚠️ リプライ失敗: {e}")
 
     # Threads 投稿（失敗してもX投稿は保存する）
     th_post_id = th_reply_id = None
@@ -464,9 +467,10 @@ def main():
             threads_uid = _threads_get_user_id(threads_token)
             th_post_id = _post_threads(post["text"], threads_token, threads_uid)
             print(f"{log_pfx} ✅ Threads投稿: {th_post_id}")
-            th_reply_text = THREADS_REPLY_FIXED if note_cat == "fixed" else reply_text
-            th_reply_id = _post_threads(th_reply_text, threads_token, threads_uid, reply_to_id=th_post_id)
-            print(f"{log_pfx} ✅ Threadsリプライ: {th_reply_id}")
+            if REPLY_ENABLED:
+                th_reply_text = THREADS_REPLY_FIXED if note_cat == "fixed" else reply_text
+                th_reply_id = _post_threads(th_reply_text, threads_token, threads_uid, reply_to_id=th_post_id)
+                print(f"{log_pfx} ✅ Threadsリプライ: {th_reply_id}")
         except Exception as e:
             print(f"{log_pfx} ⚠️ Threads投稿失敗（X投稿は成功）: {e}")
 
