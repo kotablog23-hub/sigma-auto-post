@@ -40,10 +40,17 @@ def load_posts():
                       "key": f"{row[0]}|{text[:40]}"})
     return posts
 
-# ── 投稿済みキーを読み込み ────────────────────────────────────────
+# ── state読み込み ────────────────────────────────────────────────
 state_file = BASE / "x_posts/.smart_post_state.json"
 state = json.loads(state_file.read_text()) if state_file.exists() else {"posted_keys": [], "history": []}
-posted_keys = set(state["posted_keys"])
+
+# 各ポストの最終使用日時をhistoryから構築（サイクル制）
+last_used_map: dict = {}
+for h in state.get("history", []):
+    k = h["key"]
+    at = h.get("posted_at", "")
+    if k not in last_used_map or at > last_used_map[k]:
+        last_used_map[k] = at
 
 # ── 全文テキスト辞書（キー→全文）────────────────────────────────
 def build_fulltext_map(posts):
@@ -99,10 +106,12 @@ if sched_file.exists():
         if t in posted_times: continue
         future_slots.append(t)
 
-# シミュレーション用：eligible未投稿を用意（60日以内・2026-03-08以降）
+# シミュレーション用：eligible（60日以上前・全ポスト対象・使用済みも含む）
 cutoff = (now - timedelta(days=60)).strftime("%Y-%m-%d")
 eligible = [p for p in all_posts
-            if "2026-03-08" <= p["date"][:10] <= cutoff and p["key"] not in posted_keys]
+            if "2026-03-08" <= p["date"][:10] <= cutoff]
+for p in eligible:
+    p["last_used"] = last_used_map.get(p["key"], "")
 
 available_map = defaultdict(list)
 for p in eligible:
@@ -123,7 +132,7 @@ for t in future_slots:
         simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定"})
         continue
     candidates = sorted([x for x in sim_available[cat] if x["key"] not in sim_used],
-                        key=lambda x: x["date"])
+                        key=lambda x: (x["last_used"], x["date"]))
     if not candidates:
         simulated.append({"time": t, "text": "(投稿可能なポストなし)", "status": "予定"})
         continue

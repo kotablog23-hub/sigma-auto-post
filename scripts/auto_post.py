@@ -356,7 +356,6 @@ def main():
 
     posts     = load_posts()
     state     = load_state()
-    posted_ks = set(state["posted_keys"])
     media_map = load_media_map()
 
     # 対象期間フィルター（上限は60日以上前まで）
@@ -365,11 +364,19 @@ def main():
     posts = [p for p in posts
              if "2026-03-08" <= p["date"][:10] <= cutoff_str]
 
-    # カテゴリ別に未投稿を分類
+    # 各ポストの最終使用日時をhistoryから構築（サイクル制）
+    last_used: dict[str, str] = {}
+    for h in state.get("history", []):
+        k = h["key"]
+        at = h.get("posted_at", "")
+        if k not in last_used or at > last_used[k]:
+            last_used[k] = at
+
+    # カテゴリ別に分類（全ポスト対象・使用済みも含む）
     available: dict[str, list] = defaultdict(list)
     for p in posts:
-        if p["key"] not in posted_ks:
-            available[p["time_category"]].append(p)
+        p["last_used"] = last_used.get(p["key"], "")
+        available[p["time_category"]].append(p)
 
     total_remaining = sum(len(v) for v in available.values())
 
@@ -414,8 +421,8 @@ def main():
         print(f"{log_pfx} ❌ 投稿可能な投稿が見つかりません")
         return
 
-    # カテゴリ内で日付順に選択
-    post = sorted(available[cat], key=lambda p: p["date"])[0]
+    # カテゴリ内で最終使用が古い順に選択（未使用→古い使用済みの順）
+    post = sorted(available[cat], key=lambda p: (p["last_used"], p["date"]))[0]
 
     note_cat   = post.get("note_cat_override") or classify_note(post["text"])
     reply_text = REPLY_TEXTS[note_cat]
