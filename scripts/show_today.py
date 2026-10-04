@@ -13,7 +13,7 @@ NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 # auto_post.py と同じnote分類ロジックを共有（定数を二重管理しない）
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from auto_post import classify_note, REPLY_TEXTS, pick_category
+from auto_post import classify_note, REPLY_TEXTS, pick_category, REPLY_ENABLED
 
 # 最新stateをGitHubから取得
 subprocess.run(["git", "-C", str(BASE), "pull", "--quiet"], capture_output=True)
@@ -152,7 +152,7 @@ for i, p in enumerate(all_entries, 1):
     print(p["text"])
     if p.get("image"):
         print(f"\n[画像] {p['image']}")
-    if p.get("reply"):
+    if REPLY_ENABLED and p.get("reply"):
         names = {"motemigaki": "男磨き大全", "zoryo": "増量ガイド",
                  "shijaku": "静寂論", "fixed": "固定リプ"}
         label = names.get(p.get("note_cat"), p.get("note_cat"))
