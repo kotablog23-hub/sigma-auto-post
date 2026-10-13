@@ -425,7 +425,7 @@ def main():
     post = sorted(available[cat], key=lambda p: (p["last_used"], p["date"]))[0]
 
     note_cat   = post.get("note_cat_override") or classify_note(post["text"])
-    reply_text = REPLY_TEXTS[note_cat]
+    reply_text = REPLY_TEXTS.get(note_cat, REPLY_TEXTS["fixed"])
     local_img  = post.get("image_path", "")
     local_imgs = [p.strip() for p in local_img.split(",") if p.strip()] if local_img else []
     img_urls   = [] if local_imgs else media_map.get(post["date"], [])
