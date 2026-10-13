@@ -49,7 +49,8 @@ THREADS_API = "https://graph.threads.net/v1.0"
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 # ── noteリンク自動分類 ──────────────────────────────────────────
-REPLY_ENABLED = False  # リプ無効化中。再開するにはTrueに変更
+REPLY_ENABLED   = False  # リプ無効化中。再開するにはTrueに変更
+THREADS_ENABLED = False  # Threads投稿無効化中。再開するにはTrueに変更
 
 REPLY_TEXTS = {
     "motemigaki": "「爆速でモテる男磨きのやり方」非モテが恋愛の土台を築き上げる男磨きby元自閉症チー牛が解説\nhttps://note.com/puregrinding1/n/n4eabc4c9b556",
@@ -469,7 +470,7 @@ def main():
     # Threads 投稿（失敗してもX投稿は保存する）
     th_post_id = th_reply_id = None
     threads_token = os.environ.get("THREADS_ACCESS_TOKEN", "")
-    if threads_token:
+    if THREADS_ENABLED and threads_token:
         try:
             threads_uid = _threads_get_user_id(threads_token)
             th_post_id = _post_threads(post["text"], threads_token, threads_uid)
