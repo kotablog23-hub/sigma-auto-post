@@ -49,7 +49,7 @@ THREADS_API = "https://graph.threads.net/v1.0"
 NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 
 # ── noteリンク自動分類 ──────────────────────────────────────────
-REPLY_ENABLED   = False  # リプ無効化中。再開するにはTrueに変更
+REPLY_ENABLED   = True
 THREADS_ENABLED = False  # Threads投稿無効化中。再開するにはTrueに変更
 
 REPLY_TEXTS = {
