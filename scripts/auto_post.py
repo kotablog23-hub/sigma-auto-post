@@ -416,6 +416,16 @@ def main():
         except Exception:
             pass
 
+    # 日曜のsundayカテゴリは1日2件まで（バランス確保）
+    if now.weekday() == 6:
+        today_str = now.strftime("%Y-%m-%d")
+        sunday_today = sum(
+            1 for h in state.get("history", [])
+            if h.get("category") == "sunday" and h.get("posted_at", "")[:10] == today_str
+        )
+        if sunday_today >= 2 and available.get("sunday"):
+            del available["sunday"]
+
     # カテゴリ選択
     cat = pick_category(now, available)
     if cat is None:

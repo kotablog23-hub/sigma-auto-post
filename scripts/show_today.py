@@ -121,11 +121,18 @@ wd_num = now.weekday()  # 0=Mon, 6=Sun
 
 simulated = []
 sim_used = set()
+# 投稿済み分のsundayカウントを引き継ぐ
+sim_sunday_count = sum(1 for p in confirmed if p.get("status") == "投稿済み"
+                       and any(p["key"] == h["key"] and h.get("category") == "sunday"
+                               for h in state.get("history", [])))
 for t in future_slots:
     h2, m2 = map(int, t.split(":"))
     # その時刻でのカテゴリ判定
     sim_available = {cat: [x for x in ps if x["key"] not in sim_used]
                      for cat, ps in available_map.items()}
+    # 日曜のsundayカテゴリは1日2件まで
+    if now.weekday() == 6 and sim_sunday_count >= 2:
+        sim_available.pop("sunday", None)
     sim_dt = now.replace(hour=h2, minute=m2, second=0)
     cat = pick_category(sim_dt, sim_available)
     if cat is None:
@@ -138,6 +145,8 @@ for t in future_slots:
         continue
     chosen = candidates[0]
     sim_used.add(chosen["key"])
+    if cat == "sunday":
+        sim_sunday_count += 1
     note_cat = chosen.get("note_cat_override") or classify_note(chosen["text"])
     simulated.append({"time": t, "text": chosen["text"], "status": "予定",
                       "note_cat": note_cat, "reply": REPLY_TEXTS[note_cat],
