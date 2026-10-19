@@ -372,6 +372,10 @@ def main():
         at = h.get("posted_at", "")
         if k not in last_used or at > last_used[k]:
             last_used[k] = at
+    # posted_keysにあってhistoryにないものはキーの日付をlast_usedとする（常に先頭に浮上するのを防ぐ）
+    for pk in state.get("posted_keys", []):
+        if pk not in last_used and "|" in pk:
+            last_used[pk] = pk.split("|")[0].strip()
 
     # カテゴリ別に分類（全ポスト対象・使用済みも含む）
     available: dict[str, list] = defaultdict(list)

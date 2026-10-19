@@ -51,6 +51,10 @@ for h in state.get("history", []):
     at = h.get("posted_at", "")
     if k not in last_used_map or at > last_used_map[k]:
         last_used_map[k] = at
+# posted_keysにあってhistoryにないものはキーの日付をlast_usedとする（常に先頭に浮上するのを防ぐ）
+for pk in state.get("posted_keys", []):
+    if pk not in last_used_map and "|" in pk:
+        last_used_map[pk] = pk.split("|")[0].strip()
 
 # ── 全文テキスト辞書（キー→全文）────────────────────────────────
 def build_fulltext_map(posts):
