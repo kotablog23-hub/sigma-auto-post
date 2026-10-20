@@ -153,7 +153,7 @@ for t in future_slots:
         sim_sunday_count += 1
     note_cat = chosen.get("note_cat_override") or classify_note(chosen["text"])
     simulated.append({"time": t, "text": chosen["text"], "status": "予定",
-                      "note_cat": note_cat, "reply": REPLY_TEXTS[note_cat],
+                      "note_cat": note_cat, "reply": REPLY_TEXTS.get(note_cat, REPLY_TEXTS["fixed"]),
                       "image": chosen.get("image", "")})
 
 # ── 表示 ──────────────────────────────────────────────────────────
