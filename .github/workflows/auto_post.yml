@@ -6,6 +6,8 @@ name: X Auto Post
 
 on:
   workflow_dispatch:
+    # DISABLED
+    # To re-enable, remove the 'if: false' from the post job
     inputs:
       dry_run:
         description: 'Dry run（実際には投稿しない）'
@@ -19,6 +21,7 @@ concurrency:
 
 jobs:
   post:
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: write  # 状態ファイルをpushするために必要
